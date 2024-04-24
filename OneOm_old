@@ -1,0 +1,125 @@
+var spreadsheetId = "1U9fJhDti6nQrSzqMbERWQL8SAjfaaKcG3PgDtwRTPv0";
+var oneOM = "oneOM";
+var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+var oneOMSheet = spreadsheet.getSheetByName(oneOM);
+var envSheetName = "Env_Set";
+var envSheet = spreadsheet.getSheetByName(envSheetName);
+var loopData = 1;
+var maxData = 0;
+var page=0;
+var endPointFull = "";
+
+function oneOMcall() {
+  
+  // do credential call
+  credentialCheck();
+  // Retrieve Data
+  var envValueRange = envSheet.getRange("B2"); // Assuming environment is at B2
+  var envValue = envValueRange.getValue();
+
+  Logger.log("Env Choosed :" + envValue);
+  // lets choose Creds based on Env : 
+  var credsSheetName = envValue;
+  var envCredsSheet = "";
+  var envCredsRange = "";
+  
+  // Variable for Credentials
+  var baseurlDecathlonAPI = "";
+  var basicAuth = "";
+  // var merchantID = "decathlon-my" //testing using Decathlon
+  // var merchantID = "lazada-my"; //testing using Decathlon
+  var merchantID = "shopee-my"; //testing using Decathlon
+  const ordersEndPoint = "/oneom/api/v1/orders";
+  var clientID = "";
+
+  envCredsSheet = spreadsheet.getSheetByName(credsSheetName);
+  envCredsRange = envCredsSheet.getRange("B2"); 
+  baseurlDecathlonAPI = envCredsRange.getValue();
+  baseurlDecathlonAPI += ordersEndPoint;
+  endPointFull = baseurlDecathlonAPI;
+  // get baseAuth
+  envCredsRange = envCredsSheet.getRange("C8"); // Assuming the expiration date is in cell B8
+  basicAuth = envCredsRange.getValue(); 
+  Logger.log("we will use endpoint : " +baseurlDecathlonAPI + " Bearer : " + basicAuth + " merchant ID : " + merchantID);
+  
+  // lets build request
+  var headersValue = {
+    'x-merchant-id': merchantID,
+    'Authorization': 'Bearer '+basicAuth
+  };
+
+  var params = {
+    method: "get",
+    headers: headersValue,
+    muteHttpExceptions: true
+  }
+
+  oneOMSheet.clear();
+  oneOMSheet.appendRow(['order reference','status code','fulfillment status']);
+  //var startDate = "2023-12-01T00:00:00"+encodeURIComponent('+')+"08:00";
+  //var endDate = "2023-12-31T23:59:59"+encodeURIComponent('+')+"08:00";
+
+  var startDate = "2024-04-21T00:00:00"+encodeURIComponent('+')+"08:00";
+  var endDate = "2024-04-21T23:59:59"+encodeURIComponent('+')+"08:00";
+
+  while (loopData != 0 )
+  {
+      Logger.log(params);
+      var parameterURL = "";
+      var parameterURL="?status_code=VALIDATED&creation_date_time_start="+startDate+"&creation_date_time_end="+endDate+"&page="+page+"&size=50&sort=creation_date_time";
+      baseurlDecathlonAPI = "";
+      baseurlDecathlonAPI += endPointFull;
+      baseurlDecathlonAPI += parameterURL;
+      Logger.log(baseurlDecathlonAPI);
+    
+    try{
+      var response = UrlFetchApp.fetch(baseurlDecathlonAPI, params);
+      var result = response.getContentText();
+      var resultHeader = response.getResponseCode();
+      if(resultHeader != 206){ // so no partial transactions meaning no pages we can just mark as done
+        Logger.log("Only 1 page we will stop after this call");
+        loopData = 0;
+      }
+      Logger.log(resultHeader);
+      var headerAll = response.getAllHeaders();
+      Logger.log(headerAll);
+      var arrayHeader = Object.values(headerAll);
+      arrayHeader.forEach(loopHeader);
+      var responseJson = JSON.parse(result);
+      console.log(loopData);
+      responseJson.forEach(getData);
+    }
+    catch (error){
+        Logger.log("Error occurred: " + error);
+      }
+
+  }
+}
+
+function loopHeader(item) {
+  var datas = String(item);
+  if(datas.includes("items") == true){
+    Logger.log(datas);
+    Logger.log(datas.search("/"));
+    var max = datas.slice(datas.search("/")+1,datas.length);
+    maxData = max;
+    var startIndex = datas.slice(datas.search("s")+1,datas.search("-"));
+    Logger.log("Star Index : " + startIndex + " Max : " + max);
+    var startIndex = datas.slice(datas.search("-")+1,datas.search("/"));
+    var currentEnd = startIndex;
+    Logger.log("till : " + currentEnd);
+    if(maxData == currentEnd){
+      loopData = 0;
+    }
+    else{
+      page += 1;
+    }
+  }
+}
+
+function getData(transactions) {
+  console.log(loopData);
+  console.log(transactions.reference + " " + transactions.status_code);
+  console.log(transactions.fulfillments[0].deliveries[0].status_code);
+  oneOMSheet.appendRow([transactions.reference, transactions.status_code,transactions.fulfillments[0].deliveries[0].status_code]);
+}
